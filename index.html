@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prime Factorization & Base Converter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/big-integer/1.6.51/BigInteger.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --card-bg: #2d2d2d;
+            --text-color: #e0e0e0;
+            --accent-color: #4CAF50;
+            --accent-hover: #45a049;
+            --border-color: #404040;
+            --table-header: #333;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1000px;
+            background-color: var(--card-bg);
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            margin-top: 0;
+            text-align: center;
+            color: var(--accent-color);
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background-color: #121212;
+            color: white;
+            font-size: 1.1rem;
+            min-width: 200px;
+        }
+
+        button {
+            padding: 12px 24px;
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: var(--accent-hover);
+        }
+
+        button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
+
+        #status {
+            margin-bottom: 1rem;
+            font-style: italic;
+            color: #aaa;
+            height: 1.5em;
+        }
+
+        .result-section {
+            margin-bottom: 2rem;
+            padding: 1.5rem;
+            background-color: #222;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+            display: none; /* Hidden by default */
+        }
+
+        .formula {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 1.2rem;
+            word-break: break-all;
+            line-height: 1.6;
+            margin-bottom: 1rem;
+        }
+
+        .identifier {
+            color: var(--accent-color);
+            font-weight: bold;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: var(--table-header);
+            color: var(--accent-color);
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background-color: #383838;
+        }
+
+        .mono {
+            font-family: 'Courier New', Courier, monospace;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Prime Factorization & Base Analysis</h1>
+    
+    <p style="color:#aaa; text-align:center; margin-bottom:20px;">
+        Enter a large integer. Factors will be assigned identifiers (A, B, C...) and converted to multiple bases.
+    </p>
+
+    <div class="input-group">
+        <input type="text" id="numberInput" placeholder="Enter a positive integer (e.g., 123456789)" />
+        <button id="calcBtn" onclick="processNumber()">Factorize</button>
+    </div>
+
+    <div id="status"></div>
+
+    <div id="output" class="result-section">
+        <h3>Symbolic Factorization</h3>
+        <div id="formula" class="formula"></div>
+        
+        <h3>Factor Conversion Table</h3>
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Decimal</th>
+                        <th>Binary (2)</th>
+                        <th>Ternary (3)</th>
+                        <th>Quaternary (4)</th>
+                        <th>Octal (8)</th>
+                        <th>Hex (16)</th>
+                        <th>Base64</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Standard Base64 Alphabet for integer representation
+    // 0-25: A-Z, 26-51: a-z, 52-61: 0-9, 62: +, 63: /
+    const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    // --- Factorization Logic ---
+
+    // A simple async wrapper to prevent UI freezing
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // Pollard's Rho Algorithm for finding a factor
+    async function pollardsRho(n) {
+        if (n.mod(2).equals(0)) return bigInt(2);
+        
+        let x = bigInt.randBetween(2, n.minus(1));
+        let y = x;
+        let c = bigInt.randBetween(1, n.minus(1));
+        let g = bigInt(1);
+
+        // Safety break for very large primes that might hang the browser
+        let iterations = 0;
+        const YIELD_LIMIT = 2000; 
+
+        while (g.equals(1)) {
+            x = x.multiply(x).add(c).mod(n);
+            y = y.multiply(y).add(c).mod(n);
+            y = y.multiply(y).add(c).mod(n);
+            g = x.minus(y).abs().gcd(n);
+
+            iterations++;
+            if (iterations % YIELD_LIMIT === 0) {
+                await sleep(0); // Yield to main thread
+            }
+            // Fail-safe for prime numbers or extremely hard composites
+            if (iterations > 500000) return n; 
+        }
+
+        return g;
+    }
+
+    // Recursive factorization
+    async function getFactors(n) {
+        if (n.equals(1)) return [];
+        if (n.isProbablePrime(10)) return [n];
+
+        let factor = await pollardsRho(n);
+        
+        // If pollard's rho failed to find a factor (returned n), try simple trial division for small factors
+        // or accept it as prime-ish for this demo to avoid infinite loop
+        if (factor.equals(n)) {
+            // Quick check for small primes
+            let smallPrimes = [2,3,5,7,11,13,17,19,23,29];
+            for(let p of smallPrimes) {
+                if(n.mod(p).equals(0)) {
+                    factor = bigInt(p);
+                    break;
+                }
+            }
+        }
+
+        let otherFactor = n.divide(factor);
+        
+        // Parallel recursion (conceptually), but we await sequentially
+        let f1 = await getFactors(factor);
+        let f2 = await getFactors(otherFactor);
+        
+        return f1.concat(f2);
+    }
+
+    // --- UI Handling ---
+
+    async function processNumber() {
+        const input = document.getElementById('numberInput').value.trim();
+        const statusEl = document.getElementById('status');
+        const outputEl = document.getElementById('output');
+        const calcBtn = document.getElementById('calcBtn');
+
+        // Reset
+        outputEl.style.display = 'none';
+        statusEl.textContent = '';
+        
+        if (!input) return;
+
+        // Parse input
+        let num;
+        try {
+            num = bigInt(input);
+            if (num.lesser(2)) throw new Error("Number must be >= 2");
+        } catch (e) {
+            statusEl.textContent = "Invalid integer.";
+            return;
+        }
+
+        // Lock UI
+        calcBtn.disabled = true;
+        statusEl.textContent = "Calculating factors... (This may take a moment for large numbers)";
+
+        try {
+            // Factorize
+            const factors = await getFactors(num);
+            factors.sort((a, b) => a.compare(b)); // Sort ascending
+
+            // Generate Unique Identifiers (A, B, C...)
+            const uniqueFactors = [];
+            const factorMap = new Map(); // Factor String -> Identifier
+            let idIndex = 0;
+
+            // Helper to generate A, B ... Z, AA, AB ...
+            function getIdentifier(idx) {
+                let s = "";
+                while (idx >= 0) {
+                    s = String.fromCharCode((idx % 26) + 65) + s;
+                    idx = Math.floor(idx / 26) - 1;
+                }
+                return s;
+            }
+
+            // Map unique factors
+            for (let f of factors) {
+                const fStr = f.toString();
+                if (!factorMap.has(fStr)) {
+                    const id = getIdentifier(idIndex++);
+                    factorMap.set(fStr, id);
+                    uniqueFactors.push({ val: f, id: id });
+                }
+            }
+
+            // Build Formula String
+            const formulaParts = factors.map(f => {
+                return `<span class="identifier" title="${f.toString()}">${factorMap.get(f.toString())}</span>`;
+            });
+            
+            document.getElementById('formula').innerHTML = 
+                `X = ${formulaParts.join(' &times; ')}`;
+
+            // Build Table
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            uniqueFactors.forEach(item => {
+                const val = item.val;
+                const row = document.createElement('tr');
+                
+                // Base conversions
+                // bigInt.toString(base) supports up to 36. 
+                // For base 64, we use toString(base, alphabet).
+                
+                const colData = [
+                    item.id,
+                    val.toString(),
+                    val.toString(2),
+                    val.toString(3),
+                    val.toString(4),
+                    val.toString(8),
+                    val.toString(16).toUpperCase(),
+                    val.toString(64, BASE64_ALPHABET)
+                ];
+
+                colData.forEach((text, i) => {
+                    const td = document.createElement('td');
+                    td.textContent = text;
+                    if (i > 1) td.className = 'mono'; // Monospace for numbers
+                    if (i === 0) {
+                        td.className = 'identifier';
+                        td.style.fontWeight = 'bold';
+                    }
+                    row.appendChild(td);
+                });
+
+                tbody.appendChild(row);
+            });
+
+            outputEl.style.display = 'block';
+            statusEl.textContent = `Calculation complete. Found ${factors.length} factors (${uniqueFactors.length} unique).`;
+
+        } catch (err) {
+            console.error(err);
+            statusEl.textContent = "An error occurred during calculation.";
+        } finally {
+            calcBtn.disabled = false;
+        }
+    }
+</script>
+
+</body>
+</html>
